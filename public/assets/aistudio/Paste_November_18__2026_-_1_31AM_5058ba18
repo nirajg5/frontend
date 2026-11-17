@@ -1,0 +1,1188 @@
+# DATASENTINEL – COMPLETE FRONTEND DEVELOPMENT AND FASTAPI BACKEND INTEGRATION
+
+## 1. PROJECT OBJECTIVE
+
+I am developing a final-year engineering project named:
+
+**DataSentinel – Intelligent Data Reliability and Observability Platform**
+
+I already have an existing project with a Python FastAPI backend and a React frontend.
+
+My project repository is:
+
+`https://github.com/nirajg5/DataSentinel`
+
+My local project directory is:
+
+`D:\DataSentinel`
+
+My existing frontend is located inside:
+
+`D:\DataSentinel\frontend`
+
+The frontend already contains feature folders for authentication, dashboard, datasets, ETL, freshness, incidents, ingestion, monitoring, pipeline runs, predictions, quality, RAG, reliability, and agents.
+
+**Your primary responsibility is to finish the existing frontend, connect every supported feature to the actual FastAPI backend, repair API integration issues, and deliver a working application.**
+
+Do not create a new unrelated frontend. Do not delete the existing project. Do not just generate a plan or static dashboard. Inspect the existing files, modify the actual source code, and implement the complete application.
+
+## 2. MANDATORY TECHNOLOGY STACK
+
+### Frontend
+
+- React 19
+- Vite
+- TypeScript
+- Tailwind CSS
+- shadcn/ui or reusable React components
+- React Router
+- TanStack Query
+- React Hook Form
+- Zod
+- Recharts
+- Lucide React
+
+### Backend
+
+Use my existing backend without unnecessarily changing its business logic:
+
+- Python FastAPI
+- PostgreSQL
+- SQLAlchemy
+- Alembic
+- Redis
+- Celery
+- Pandas
+- Scikit-learn
+- LangGraph
+- Groq API
+- Pinecone
+- Retrieval-Augmented Generation (RAG)
+- Prometheus
+
+### VERY IMPORTANT: DO NOT USE AXIOS
+
+Do not install or use Axios.
+
+Use the browser's native JavaScript `fetch()` API for all frontend-to-backend HTTP communication.
+
+Create one centralized API client in:
+
+`frontend/src/lib/api-client.ts`
+
+It must support:
+- GET, POST, PATCH, PUT, DELETE.
+- JSON request and response handling.
+- URL-encoded form submissions.
+- JWT Bearer authentication.
+- HTTP error handling.
+- FastAPI validation errors.
+- Network errors.
+- Request cancellation and timeouts.
+- Empty responses.
+- Plain-text Prometheus responses.
+- FormData when required.
+
+Use native fetch, not Axios or another HTTP client library.
+
+## 3. APPLICATION PORTS AND ENVIRONMENT CONFIGURATION
+
+Use the following exact development configuration.
+
+| Service | Address | Port |
+|---|---|---:|
+| React + Vite frontend | http://localhost:3000 | 3000 |
+| FastAPI backend | http://127.0.0.1:8000 | 8000 |
+| Swagger documentation | http://127.0.0.1:8000/docs | 8000 |
+| PostgreSQL host | localhost | 5433 |
+| Redis | localhost | 6379 |
+
+Create `frontend/.env.example` with:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_TIMEOUT=15000
+```
+
+The frontend must use:
+
+```typescript
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://127.0.0.1:8000";
+```
+
+Do not change the backend port from 8000 or the frontend development port from 3000.
+
+Configure FastAPI CORS to allow:
+
+```text
+http://localhost:3000
+http://127.0.0.1:3000
+```
+
+Inspect the existing CORS middleware and `backend/core/config.py` before modifying anything. Fix missing configuration properties such as `cors_origin_list` where necessary. Do not register duplicate CORS middleware.
+
+## 4. FIRST ACTION: INSPECT THE EXISTING REPOSITORY
+
+Before changing code, inspect the actual project structure and existing files.
+
+Important backend files:
+
+```text
+backend/
+├── main.py
+├── core/
+│   └── config.py
+├── auth/
+├── api/
+├── database/
+├── models/
+├── ingestion/
+├── etl/
+├── quality/
+├── freshness/
+├── reliability/
+├── incidents/
+├── ai/
+├── rag/
+├── agents/
+├── prediction/
+├── pipeline_runs/
+├── tasks/
+└── monitoring/
+```
+
+Important frontend files:
+
+```text
+frontend/
+└── src/
+    ├── app/
+    ├── components/
+    ├── context/
+    ├── features/
+    │   ├── agents/
+    │   ├── ai-analysis/
+    │   ├── auth/
+    │   ├── dashboard/
+    │   ├── datasets/
+    │   ├── etl/
+    │   ├── freshness/
+    │   ├── incidents/
+    │   ├── ingestion/
+    │   ├── monitoring/
+    │   ├── pipeline-runs/
+    │   ├── predictions/
+    │   ├── quality/
+    │   ├── rag/
+    │   └── reliability/
+    ├── lib/
+    ├── mocks/
+    ├── services/
+    ├── types/
+    ├── App.tsx
+    └── main.tsx
+```
+
+Preserve and extend this existing structure.
+
+Inspect the real backend route definitions and Pydantic schemas. Do not rely exclusively on the old frontend API inventory or assumed response types.
+
+## 5. CENTRALIZED API CLIENT USING FETCH
+
+Create a reusable API client.
+
+Example implementation:
+
+```typescript
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://127.0.0.1:8000";
+
+export async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = localStorage.getItem("datasentinel_token");
+
+  const headers = new Headers(options.headers);
+
+  headers.set("Accept", "application/json");
+
+  if (
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}${path}`,
+      {
+        ...options,
+        headers,
+        signal: options.signal || controller.signal
+      }
+    );
+
+    const contentType =
+      response.headers.get("content-type") || "";
+
+    const result = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("Authentication required. Please log in again.");
+      }
+
+      if (response.status === 403) {
+        throw new Error("You do not have permission for this operation.");
+      }
+
+      const message =
+        typeof result === "object" && result !== null
+          ? result.detail || result.message
+          : result;
+
+      throw new Error(
+        String(message || `HTTP ${response.status}`)
+      );
+    }
+
+    return result as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+```
+
+Improve this implementation as needed, particularly for external abort signals, URL-encoded authentication, and empty HTTP responses.
+
+Create separate API service files:
+
+```text
+frontend/src/services/api/
+├── authApi.ts
+├── datasetsApi.ts
+├── ingestionApi.ts
+├── etlApi.ts
+├── qualityApi.ts
+├── freshnessApi.ts
+├── reliabilityApi.ts
+├── incidentsApi.ts
+├── aiAnalysisApi.ts
+├── ragApi.ts
+├── agentsApi.ts
+├── predictionsApi.ts
+├── pipelineRunsApi.ts
+└── healthApi.ts
+```
+
+Every feature must use the centralized native-fetch client.
+
+Do not scatter hardcoded backend URLs throughout React components.
+
+## 6. AUTHENTICATION AND JWT INTEGRATION
+
+Inspect:
+
+- `backend/auth/routes.py`
+- `backend/auth/schemas.py`
+- `backend/auth/constants.py`
+- `backend/auth/dependencies.py`
+- `backend/auth/security.py`
+- `frontend/src/context/AuthContext.tsx`
+- `frontend/src/services/api/authApi.ts`
+- `frontend/src/features/auth/LoginPage.tsx`
+- `frontend/src/features/auth/RegisterPage.tsx`
+
+Actual backend authentication routes:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/auth/register` | Create user |
+| POST | `/auth/login` | Authenticate and return JWT |
+| GET | `/auth/me` | Get current user |
+| GET | `/auth/admin-test` | Verify admin permission |
+
+### Registration request
+
+The backend accepts:
+
+```json
+{
+  "username": "admin",
+  "email": "admin@gmail.com",
+  "password": "Admin@12345",
+  "role": "ADMIN"
+}
+```
+
+Do not send `full_name` unless the backend schema has been updated to accept it.
+
+### Backend roles
+
+Use these exact values:
+
+```text
+ADMIN
+DATA_ENGINEER
+DATA_ANALYST
+VIEWER
+```
+
+The frontend can display friendly labels, but role mapping must use the actual backend values.
+
+### Login
+
+The FastAPI login route uses `OAuth2PasswordRequestForm`.
+
+Send credentials as:
+
+```text
+Content-Type: application/x-www-form-urlencoded
+```
+
+Fields:
+
+```text
+username=admin
+password=your_password
+```
+
+The backend returns:
+
+```json
+{
+  "access_token": "actual-jwt-token",
+  "token_type": "bearer"
+}
+```
+
+After login:
+
+1. Save the real returned token.
+2. Attach it as a Bearer token on protected API calls.
+3. Call GET `/auth/me`.
+4. Store the actual authenticated user's profile.
+5. Handle expired or invalid tokens.
+6. On logout, remove the token and clear user state.
+
+Do not generate fake JWT tokens.
+
+Do not automatically create a fake Admin user when the browser has no token.
+
+Do not allow the frontend role switcher to grant actual backend permissions.
+
+Public registration must not allow users to promote themselves to ADMIN. Use a controlled administrator bootstrap process or an authorized backend operation for administrative account creation.
+
+## 7. ACTUAL BACKEND ROUTES TO INTEGRATE
+
+Use the existing backend functionality below. Inspect every corresponding router and schema to confirm details.
+
+### A. Dataset management
+
+File: `backend/api/datasets.py`
+
+```text
+GET /datasets/
+```
+
+Actual response fields:
+
+```json
+[
+  {
+    "id": 1,
+    "dataset_name": "bronze_customers",
+    "source_type": "CSV",
+    "source_name": "customers",
+    "source_path": "data/source/customers.csv",
+    "owner": "admin"
+  }
+]
+```
+
+Important: The existing dataset router currently exposes a GET route but does not expose a dataset-registration POST route.
+
+Implement the frontend listing using the actual response fields.
+
+For complete dataset management, add a minimal authenticated `POST /datasets/` backend endpoint if necessary. It must use a proper Pydantic schema, SQLAlchemy model, duplicate-name validation, allowed source-type validation, and safe CSV path validation. Restrict registration to ADMIN or DATA_ENGINEER.
+
+Do not invent update/delete routes unless they are explicitly implemented.
+
+### B. CSV ingestion
+
+File: `backend/ingestion/routes.py`
+
+```text
+POST /ingestion/dataset?dataset_name={dataset_name}
+```
+
+The backend expects `dataset_name` as a query parameter, not as a JSON request containing `dataset_name`.
+
+Example:
+
+```typescript
+await apiFetch(
+  `/ingestion/dataset?dataset_name=${encodeURIComponent(datasetName)}`,
+  {
+    method: "POST"
+  }
+);
+```
+
+An optional failure-prediction feature request body may be sent only when all required fields are supplied.
+
+Current ingestion supports CSV files only.
+
+Supported registered datasets:
+
+```text
+bronze_customers
+bronze_products
+bronze_orders
+```
+
+Expected source files:
+
+```text
+data/source/customers.csv
+data/source/products.csv
+data/source/orders.csv
+```
+
+The CSV reader restricts source files to the project's `data/source` directory.
+
+Do not display S3, Kafka, Snowflake, PostgreSQL CDC, or JSON-file ingestion as operational features. They are future extensions.
+
+The backend returns fields such as:
+
+```text
+run_id
+pipeline_run_id
+pipeline_name
+dataset_name
+rows_ingested
+status
+prediction
+prediction_error
+```
+
+Map these fields correctly to the frontend.
+
+### C. ETL processing
+
+Files:
+
+- `backend/etl/routes.py`
+- `backend/etl/gold_routes.py`
+
+Endpoints:
+
+```text
+POST /etl/silver/{dataset_type}
+POST /etl/gold/build
+```
+
+Supported Silver dataset types:
+
+```text
+customers
+products
+orders
+```
+
+The current Silver route requires no JSON body.
+
+The current Gold route also requires no JSON body.
+
+Actual Silver response includes:
+
+```text
+dataset_type
+source_table
+target_table
+rows_read
+rows_written
+status
+```
+
+Actual Gold response includes:
+
+```text
+status
+tables_created
+row_counts
+unmatched_products
+```
+
+Display actual execution details, errors, and returned counts.
+
+### D. Data quality monitoring
+
+File: `backend/quality/routes.py`
+
+```text
+POST /quality/check/{dataset_type}
+```
+
+No request body is currently required.
+
+Supported types:
+
+```text
+customers
+products
+orders
+```
+
+Actual response fields include:
+
+```text
+dataset
+table
+rows_checked
+checks_run
+failed_checks
+overall_status
+results
+```
+
+Display individual checks and their actual PASS or FAIL status.
+
+Do not fabricate a `pass_rate` field.
+
+### E. Freshness monitoring
+
+File: `backend/freshness/routes.py`
+
+```text
+POST /freshness/check/{dataset_name}
+```
+
+Supported dataset names:
+
+```text
+bronze_customers
+bronze_products
+bronze_orders
+```
+
+No request body is currently required.
+
+Display:
+
+```text
+dataset_name
+sla_hours
+actual_update_time
+expected_update_time
+age_hours
+freshness_status
+freshness_score
+checked_at
+```
+
+### F. Reliability scoring
+
+File: `backend/reliability/routes.py`
+
+```text
+POST /reliability/calculate/{dataset_type}
+```
+
+Supported dataset types:
+
+```text
+customers
+products
+orders
+```
+
+No request body is currently required.
+
+Actual response fields:
+
+```text
+dataset_name
+quality_score
+freshness_score
+pipeline_score
+overall_score
+status
+recent_pipeline_runs
+successful_pipeline_runs
+persisted
+reliability_record_id
+calculated_at
+```
+
+Use the actual returned reliability information.
+
+Do not display invented grades, uptime percentages, or fake historical scores.
+
+### G. Incident management
+
+File: `backend/incidents/routes.py`
+
+| Method | Endpoint |
+|---|---|
+| POST | `/incidents/detect/{dataset_name}` |
+| POST | `/incidents/detect-pipeline-failures/{dataset_name}` |
+| GET | `/incidents/` |
+| PATCH | `/incidents/{incident_code}/resolve` |
+
+The GET endpoint currently supports the `status` query parameter.
+
+The resolve operation currently does not require a JSON request body.
+
+Implement incident listing, detection, status display, and resolution confirmation based on the actual API.
+
+### H. AI analysis
+
+File: `backend/ai/routes.py`
+
+```text
+POST /ai-analysis/demo
+POST /ai-analysis/{incident_code}
+```
+
+The demo endpoint expects:
+
+```json
+{
+  "dataset_name": "bronze_orders",
+  "incident_type": "PIPELINE_FAILURE",
+  "severity": "HIGH",
+  "description": "Pipeline execution failed during processing.",
+  "pipeline_status": "FAILED",
+  "error_message": "Sample error message"
+}
+```
+
+The incident-specific endpoint accepts an incident code in the URL.
+
+Display only actual responses from the backend.
+
+### I. RAG assistant
+
+File: `backend/rag/routes.py`
+
+```text
+POST /rag/ask
+```
+
+Request:
+
+```json
+{
+  "question": "Why did the order ingestion pipeline fail?"
+}
+```
+
+Create a chat-style interface with:
+- Question input.
+- Submit action.
+- Loading indicator.
+- Answer from Groq/RAG.
+- Citations if returned.
+- Error handling.
+
+Do not expose Pinecone or Groq credentials in frontend code.
+
+### J. LangGraph agent investigation
+
+File: `backend/agents/routes.py`
+
+| Method | Endpoint |
+|---|---|
+| POST | `/agent/investigate` |
+| POST | `/agent/investigate/async` |
+| GET | `/agent/tasks/{task_id}` |
+| GET | `/agent/history` |
+| POST | `/agent/maintenance/recover-stale` |
+| GET | `/agent/metrics` |
+
+Investigation request:
+
+```json
+{
+  "question": "Investigate the recent failure in the orders pipeline."
+}
+```
+
+Both synchronous and asynchronous investigation routes use this question-based request schema.
+
+The async operation returns a task ID. Use that exact ID to poll the task status.
+
+History supports:
+
+```text
+limit
+offset
+status
+dataset_name
+```
+
+Maintenance endpoint:
+
+```text
+POST /agent/maintenance/recover-stale?timeout_minutes=30
+```
+
+This requires ADMIN permission.
+
+Agent metrics also require ADMIN permission.
+
+Do not invent dataset-name fields in the investigation request body.
+
+### K. Failure prediction
+
+File: `backend/prediction/routes.py`
+
+| Method | Endpoint |
+|---|---|
+| GET | `/predictions/failure/model-status` |
+| POST | `/predictions/failure/{dataset_name}` |
+| GET | `/predictions/failure/{dataset_name}/history` |
+| GET | `/predictions/evaluation` |
+
+The prediction request schema requires:
+
+```json
+{
+  "pipeline_name": "bronze_csv_ingestion",
+  "pipeline_run_id": null,
+  "hour_of_day": 14,
+  "day_of_week": 2,
+  "expected_rows": 1000,
+  "source_freshness_lag_minutes": 30,
+  "upstream_failures_24h": 0,
+  "failures_last_10_runs": 0,
+  "success_streak_before_run": 5,
+  "schema_change_detected": 0,
+  "null_rate_last_run": 0.01,
+  "duplicate_rate_last_run": 0.02,
+  "volume_change_pct_vs_7d_avg": 0.05,
+  "cpu_utilization_pct": 45,
+  "memory_utilization_pct": 60,
+  "concurrent_pipelines": 2,
+  "is_weekend": 0
+}
+```
+
+These are illustrative form defaults only, not real prediction results.
+
+Display actual:
+- Model status.
+- Failure probability.
+- Risk category.
+- Prediction history.
+- Model evaluation metrics.
+
+Do not invent predictions, model accuracy, confusion matrices, or feature importance.
+
+### L. Pipeline run monitoring
+
+File: `backend/pipeline_runs/routes.py`
+
+```text
+GET /pipeline-runs
+GET /pipeline-runs/summary
+GET /pipeline-runs/{run_id}
+```
+
+List endpoint supports:
+
+```text
+dataset_name
+status
+limit
+offset
+```
+
+Run IDs are integers.
+
+Use actual backend results for status, rows read, rows processed, rows loaded, duration, timestamps, and errors.
+
+### M. System health
+
+File: `backend/main.py`
+
+```text
+GET /
+GET /health
+GET /health/database
+GET /metrics
+```
+
+Display API and database health separately.
+
+The database health route can return HTTP 503. Do not represent that as a healthy database.
+
+The Prometheus metrics endpoint returns text exposition format, not JSON. Only integrate it where appropriate.
+
+## 8. FRONTEND DESIGN AND REQUIRED PAGES
+
+Build a polished, professional enterprise SaaS interface suitable for a final-year engineering project demonstration.
+
+Design requirements:
+- Dark navy sidebar.
+- Light neutral main workspace.
+- Blue/indigo accent.
+- Clean typography.
+- Professional tables.
+- Compact metric cards.
+- Recharts visualizations based on real backend data.
+- Responsive layout for desktop and mobile.
+- Accessible forms and buttons.
+- Consistent loading, error, and empty states.
+
+Sidebar navigation:
+
+```text
+Overview
+Datasets
+Ingestion
+ETL Operations
+Pipeline Runs
+Data Quality
+Freshness
+Reliability
+Incidents
+Failure Predictions
+AI Analysis
+RAG Assistant
+Agent Investigations
+Agent Metrics
+System Health
+User Profile
+Administration
+```
+
+Implement these pages inside the existing feature directories.
+
+### Overview dashboard
+
+Use actual backend values to display:
+- Dataset count derived from GET `/datasets/`.
+- Pipeline run summary.
+- Recent pipeline executions.
+- Successful and failed run totals when returned.
+- Incident information.
+- Failure prediction model availability.
+- Agent metrics when authorized.
+- API and database health.
+
+Do not invent metrics or create fake summary endpoints.
+
+### Dataset catalog
+
+Use GET `/datasets/`.
+
+Display actual registered datasets and their source information.
+
+Connect dataset selection to ingestion, ETL, quality, freshness, reliability, and prediction forms.
+
+### Ingestion and ETL
+
+Use the actual CSV ingestion and ETL routes.
+
+Do not show unsupported source connectors as functional.
+
+### Monitoring pages
+
+Implement quality, freshness, reliability, and incident management with actual backend responses.
+
+### AI pages
+
+Implement AI analysis, RAG, and agent investigation with real FastAPI requests.
+
+### Prediction page
+
+Implement model status, prediction input, execution, history, and evaluation using actual prediction endpoints.
+
+### Pipeline runs page
+
+Implement list, summary, filters, and individual run details.
+
+### Administration
+
+Restrict administrative operations to real backend authorization. Hiding a button or changing a frontend role is not a substitute for backend security.
+
+## 9. REPAIR EXISTING FRONTEND-BACKEND MISMATCHES
+
+Inspect the existing frontend files before editing.
+
+Known areas to repair include:
+
+**Authentication**
+- Frontend sends lowercase roles; backend expects uppercase roles.
+- Frontend currently sends `full_name` during registration, which is not part of the current backend UserCreate schema.
+- Login should use URL-encoded credentials.
+- Existing AuthContext automatically creates a mock Admin session. Remove this behaviour.
+- Do not use mock JWT tokens.
+
+**API client**
+- Replace Axios usage with native fetch.
+- Remove mock fallback as the default behaviour.
+- Make live backend mode the default.
+- Never silently replace a failed backend call with mock data.
+
+**Dataset listing**
+- Backend uses `dataset_name`, `source_type`, `source_name`, `source_path`, and `owner`.
+- Frontend currently expects fields such as `name`, `layer`, `row_count`, `status`, and `quality_score`.
+- Correct the API response adapter and TypeScript types.
+
+**Ingestion**
+- Frontend currently sends a JSON payload to `/ingestion/dataset`.
+- Backend expects `dataset_name` as a query parameter.
+- Frontend currently shows S3 and other unsupported connectors.
+- Correct the form for actual CSV ingestion.
+
+**ETL**
+- Correct the Silver and Gold request bodies. Current backend routes do not require the previous invented body structures.
+- Map actual response fields.
+
+**Quality, freshness, reliability**
+- Correct all TypeScript interfaces and page components to match actual backend fields.
+- Do not expect mock-only values.
+
+**Agents**
+- Correct request schemas to use `question`.
+- Use real async task IDs and backend task statuses.
+- Apply ADMIN authorization to maintenance and metrics operations.
+
+**Predictions**
+- Use the complete actual FailurePredictionRequest schema.
+- Correct response types.
+
+**Pipeline runs**
+- Use actual integer run IDs.
+- Correct pagination and response mappings.
+
+Do not merely change TypeScript interfaces without changing the components and API handling accordingly.
+
+## 10. BACKEND FIXES THAT ARE PERMITTED
+
+Preserve the existing backend architecture and business logic.
+
+You may make only necessary integration corrections, such as:
+- Correct CORS configuration.
+- Correct missing settings properties.
+- Add a missing dataset-registration route to `backend/api/datasets.py`.
+- Add corresponding Pydantic schemas and validation.
+- Correct API response schemas only where needed for accurate frontend integration.
+- Correct authentication validation if a genuine security issue is found.
+
+For the missing dataset registration route, use the existing Dataset SQLAlchemy model and support:
+
+```json
+{
+  "dataset_name": "bronze_customers",
+  "source_type": "CSV",
+  "source_name": "customers",
+  "source_path": "data/source/customers.csv",
+  "owner": "admin"
+}
+```
+
+Restrict dataset registration to authorized ADMIN or DATA_ENGINEER users.
+
+Validate that CSV paths stay inside the allowed `data/source` directory.
+
+Do not change ETL, prediction, RAG, or business logic merely to make the frontend look successful.
+
+If a required backend capability is genuinely missing, explain it and implement only the minimal, documented addition necessary for the frontend workflow.
+
+## 11. MOCK DATA POLICY
+
+The application must use the live FastAPI backend by default.
+
+Mock data is permitted only for an explicitly selected demonstration mode.
+
+If mock mode is implemented:
+- Keep fixtures separate from API services.
+- Display a clear DEMO DATA label.
+- Never combine mock and live data.
+- Never report a mock action as a real database operation.
+- Never automatically fall back to fabricated successful results when FastAPI fails.
+
+A failed backend call must show its actual error.
+
+## 12. SECURITY AND AUTHORIZATION
+
+- Use JWT Bearer authentication.
+- Never store passwords.
+- Never expose Groq, Pinecone, PostgreSQL, or JWT secrets.
+- Normalize role names only for frontend display and type handling.
+- Use backend role checks for every protected operation.
+- Do not let users grant themselves ADMIN permission through the frontend.
+- Prevent unauthorized access to administrative routes.
+- Do not place API keys in VITE_ environment variables.
+
+## 13. IMPLEMENTATION REQUIREMENTS
+
+Implement the application in the following logical order, but complete all applicable phases autonomously within this task:
+
+**Phase 1 – Application foundation**
+- Centralized fetch API client.
+- React application shell.
+- Routing and providers.
+- CORS and frontend environment configuration.
+- Real authentication and JWT.
+- Dashboard and health indicators.
+
+**Phase 2 – Core data workflows**
+- Dataset listing and registration.
+- CSV ingestion.
+- Bronze-Silver-Gold ETL.
+- Pipeline run monitoring.
+
+**Phase 3 – Data observability**
+- Quality monitoring.
+- Freshness monitoring.
+- Reliability scoring.
+- Incident management.
+
+**Phase 4 – AI and prediction**
+- Failure prediction.
+- AI analysis.
+- RAG assistant.
+- LangGraph synchronous and asynchronous investigations.
+- Agent metrics and administration.
+
+**Phase 5 – Final integration and testing**
+- Fix all TypeScript errors.
+- Fix all integration errors.
+- Verify all routes and feature pages.
+- Update documentation.
+
+Do not stop after Phase 1 or after creating the initial application scaffold. Continue until all applicable modules have been implemented.
+
+## 14. RUNNING COMMANDS
+
+The existing application must support the following commands.
+
+Frontend:
+
+```powershell
+cd D:\DataSentinel\frontend
+npm install
+npm run dev
+```
+
+Frontend runs on:
+
+```text
+http://localhost:3000
+```
+
+Backend runs independently from the project root:
+
+```powershell
+cd D:\DataSentinel
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Backend:
+
+```text
+http://127.0.0.1:8000
+```
+
+Swagger:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+The frontend must not require Docker to start. It should show a clear connectivity state when PostgreSQL, Redis, or another backend dependency is unavailable.
+
+Do not automatically start, stop, or delete user databases or volumes.
+
+## 15. TESTING AND VALIDATION
+
+After implementation:
+
+1. Run `npm run build`.
+2. Fix every TypeScript and build error.
+3. Verify all frontend routes render.
+4. Verify the frontend connects to `http://127.0.0.1:8000`.
+5. Test real login and JWT authentication.
+6. Test GET `/auth/me`.
+7. Test dataset listing and registration.
+8. Test CSV ingestion.
+9. Test Silver and Gold ETL.
+10. Test quality validation.
+11. Test freshness monitoring.
+12. Test reliability calculation.
+13. Test incident management.
+14. Test pipeline run retrieval.
+15. Test prediction and AI endpoints where dependencies are configured.
+16. Test agent asynchronous task polling.
+17. Verify loading, empty, and error states.
+18. Verify all protected endpoints respect actual backend permissions.
+
+Do not claim an endpoint was tested unless the request was actually executed and its response verified.
+
+If PostgreSQL, Redis, Groq, or Pinecone is unavailable, report the exact blocker without generating fake success.
+
+## 16. REQUIRED DELIVERABLES
+
+Deliver the actual working source files inside the existing repository:
+
+- Complete React frontend.
+- Native fetch API client – no Axios.
+- Responsive enterprise dashboard.
+- Real login, registration, and JWT authentication.
+- Dataset management.
+- CSV ingestion and ETL.
+- Data quality, freshness, and reliability monitoring.
+- Incident management.
+- Pipeline runs.
+- Failure prediction.
+- AI analysis and RAG assistant.
+- LangGraph investigations.
+- Administration and system health.
+- Updated frontend environment example.
+- Updated frontend README.
+- Accurate API integration documentation.
+- Successful production frontend build.
+- A final report identifying tested, untested, and blocked endpoints.
+
+## FINAL INSTRUCTION
+
+Start inspecting the existing repository and then implement the complete frontend and backend integration.
+
+**Do the actual coding, not just planning.**
+
+Preserve the existing project and existing working modules.
+
+Use native `fetch()` exclusively for frontend API communication. Do not use Axios.
+
+Use port 3000 for the frontend and port 8000 for FastAPI.
+
+Use the actual backend endpoints, schemas, request parameters, response fields, and authorization rules.
+
+Do not fabricate data, results, API routes, or successful operations.
+
+Do not ask me to repeat information already provided.
+
+Do not stop after generating a static dashboard or a frontend scaffold.
+
+Complete the implementation, run the build, test the integrations that are available, and provide a clear report of what is actually working.
